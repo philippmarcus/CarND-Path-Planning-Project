@@ -98,6 +98,15 @@ int main() {
            *   sequentially every .02 seconds
            */
 
+          double step_size = 0.4;
+
+
+          for(int i = 0; i < 50; ++i){
+
+            next_x_vals.push_back(car_x + step_size * (i+1) * cos(rad2deg(car_yaw)));
+            next_y_vals.push_back(car_y + step_size * (i+1) * sin(rad2deg(car_yaw)));
+          }
+
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
