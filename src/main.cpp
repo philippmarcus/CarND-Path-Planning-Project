@@ -98,13 +98,20 @@ int main() {
            *   sequentially every .02 seconds
            */
 
-          double step_size = 0.4;
 
+          double step_size = 0.4;
+          double lane = 1.;
 
           for(int i = 0; i < 50; ++i){
 
-            next_x_vals.push_back(car_x + step_size * (i+1) * cos(rad2deg(car_yaw)));
-            next_y_vals.push_back(car_y + step_size * (i+1) * sin(rad2deg(car_yaw)));
+            double new_s = car_s + step_size * (i+1);
+            double new_d = lane * 4. + 2.;
+
+            vector<double> xy = getXY(new_s, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+            next_x_vals.push_back(xy[0]);
+            next_y_vals.push_back(xy[1]);
+
           }
 
 
