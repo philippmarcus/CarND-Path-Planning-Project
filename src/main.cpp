@@ -7,6 +7,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
@@ -97,23 +98,102 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+          int prev_path_size = previous_path_x.size();
 
+          // add all unconsumed former points to the path
+          
+          for(int i = 0; i < prev_path_size; ++i) {
+            next_x_vals.push_back(previous_path_x[i]);
+            next_y_vals.push_back(previous_path_y[i]);
+          }
+          
+          ///////////////////////////////
+          ///// generate a spline
+          ///////////////////////////////
 
-          double step_size = 0.4;
-          double lane = 1.;
+          // convert anchor points to car-based reference system
+          vector<double> anchor_ptsx;
+          vector<double> anchor_ptsy;
 
-          for(int i = 0; i < 50; ++i){
+          // The spline should be tangent to the last part of the path. Generate 2 points!
+          if(prev_path_size > 1) {
+            std::cout << prev_path_size << " previous path points available! Case 1" << std::endl;
+            // Use the last two points
+            anchor_ptsx.push_back(previous_path_x[prev_path_size-2]);
+            anchor_ptsx.push_back(previous_path_x[prev_path_size-1]);
 
-            double new_s = car_s + step_size * (i+1);
-            double new_d = lane * 4. + 2.;
+            anchor_ptsy.push_back(previous_path_y[prev_path_size-2]);
+            anchor_ptsy.push_back(previous_path_y[prev_path_size-1]);
 
-            vector<double> xy = getXY(new_s, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          } else {
+            std::cout << prev_path_size << " previous path points available! Case 2" << std::endl;
+            // We need to make one point up in the past to get a yaw angle
+            anchor_ptsx.push_back(car_x - cos(car_yaw));
+            anchor_ptsx.push_back(car_x);
 
-            next_x_vals.push_back(xy[0]);
-            next_y_vals.push_back(xy[1]);
-
+            anchor_ptsy.push_back(car_y - sin(car_yaw));
+            anchor_ptsy.push_back(car_y);
           }
 
+          // Additionally create 3 new anchor points further ahead of the car
+          double lane = 1.;
+          double new_d = lane * 4. + 2.;
+          vector<double> wp1 = getXY(car_s + 30, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          vector<double> wp2 = getXY(car_s + 60, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          vector<double> wp3 = getXY(car_s + 90, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          anchor_ptsx.push_back(wp1[0]);
+          anchor_ptsx.push_back(wp2[0]);
+          anchor_ptsx.push_back(wp3[0]);
+          anchor_ptsy.push_back(wp1[1]);
+          anchor_ptsy.push_back(wp2[1]);
+          anchor_ptsy.push_back(wp3[1]);
+
+          // Reference for spline generation is the first of the anchor points
+          double ref_x = anchor_ptsx[1];
+          double ref_y = anchor_ptsy[1];
+          double ref_yaw = atan2(anchor_ptsy[1] - anchor_ptsy[0], anchor_ptsx[1] - anchor_ptsx[0]);
+
+          vector<double> transf_anchor_ptsx;
+          vector<double> transf_anchor_ptsy;
+
+          for(std::vector<vector<double>>::size_type i = 0; i != anchor_ptsx.size(); i++){
+            // shift points by current x,y vector of the car
+            double shift_x = anchor_ptsx[i] - ref_x;
+            double shift_y = anchor_ptsy[i] - ref_y;
+
+            // rotate points by current angle of the car
+            transf_anchor_ptsx.push_back(shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw));
+            transf_anchor_ptsy.push_back(shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw));
+          }
+          
+          // set spline points
+          tk::spline s;
+
+          s.set_points(transf_anchor_ptsx, transf_anchor_ptsy);
+
+          // Get target waypoint and compute distance
+          double d = distance(transf_anchor_ptsx[1], transf_anchor_ptsy[1], transf_anchor_ptsx[4], transf_anchor_ptsy[4]);
+          int N = 50 - prev_path_size;
+          //double step_size = d/N;
+
+          double step_size = 0.42;
+
+          for(int i = 0; i < N; ++i) {
+
+            double x_val = transf_anchor_ptsx[1] + (i+1) * step_size;
+            double y_val = s(x_val);
+
+            // shift points by current x,y vector of the car
+            double rotated_x = x_val * cos(ref_yaw) - y_val * sin(ref_yaw);
+            double rotated_y = x_val * sin(ref_yaw) + y_val * cos(ref_yaw);
+
+            double shift_x = rotated_x + ref_x;
+            double shift_y = rotated_y + ref_y;
+
+            // rotate points by current angle of the car and add to result
+            next_x_vals.push_back(shift_x);
+            next_y_vals.push_back(shift_y);
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
