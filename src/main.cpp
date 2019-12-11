@@ -5,9 +5,11 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
-#include "helpers.h"
+//#include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include "pathplanning.h"
+#include "map.h"
 
 // for convenience
 using nlohmann::json;
@@ -51,8 +53,12 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  Map m;
+
+  double ref_vel = 0; // miles per hour
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+               &map_waypoints_dx,&map_waypoints_dy, &ref_vel]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -176,12 +182,21 @@ int main() {
           int N = 50 - prev_path_size;
           //double step_size = d/N;
 
-          double step_size = 0.42;
+          //double step_size = 0.42;
+          
+
+          const double CONST_MPH_TO_MPS = 0.44704;
 
           for(int i = 0; i < N; ++i) {
 
-            double x_val = transf_anchor_ptsx[1] + (i+1) * step_size;
+            // double x_val = transf_anchor_ptsx[1] + (i+1) * step_size;
+            double x_val = transf_anchor_ptsx[1] + (i+1) * 0.02 * ref_vel * CONST_MPH_TO_MPS;
             double y_val = s(x_val);
+            
+            // Choose the increment, so that given the number of steps N, the car gets as close as possible to the desired target speed
+            if (ref_vel < 49.5) {
+              ref_vel += 0.12;
+            }
 
             // shift points by current x,y vector of the car
             double rotated_x = x_val * cos(ref_yaw) - y_val * sin(ref_yaw);
