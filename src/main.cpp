@@ -123,7 +123,8 @@ int main() {
 
                   // smallest speed ahead will be the reference speed
                   if(check_speed < speed_limits[lane]) {
-                    speed_limits[lane] = check_speed;
+                    // Smoothly adapt the speed limit when approaching cars
+                    speed_limits[lane] = fmin(check_speed * (abs(check_car_s - end_s)/30.), 49.5);
                   }         
               }
 
