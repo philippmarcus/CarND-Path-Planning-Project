@@ -16,8 +16,8 @@ using std::string;
 using std::vector;
 
 Point Point::rotate(double angle) {
-    double rotated_x = x * cos(0 - angle) - y * sin(0 - angle);
-    double rotated_y = x * sin(0 - angle) + y * cos(0 - angle);
+    double rotated_x = x * cos(angle) - y * sin(angle);
+    double rotated_y = x * sin(angle) + y * cos(angle);
 
     Point result{rotated_x, rotated_y};
     return result;
@@ -40,6 +40,9 @@ double Point::distance(Point p) {
     double result = sqrt((x -p.x)*(x-p.x)+(y-p.y)*(y-p.y));
     return result;
 }
+//friend std::ostream& Point::operator<<(std::ostream &os, Point const &p) { 
+//    return os << "Point(x=" << p.x << ", y=" << p.y <<")";
+//}
 
 vector<double> Path::getX() {
     vector<double> result;
@@ -65,17 +68,30 @@ int Path::size() {
     return pts.size();
 }
 
-Path GeneratePath(CarState car, vector<Point> previous_path,
+Path::Path(vector<double> ptsx, vector<double> ptsy) {
+
+    assert(ptsx.size() == ptsy.size());
+
+    for(vector<double>::size_type i = 0; i < ptsx.size(); ++i ) {
+        Point p = {ptsx[i], ptsy[i]};
+        pts.push_back(p);
+    }
+}
+
+Path::Path() {}
+
+Path GeneratePath(CarState car, Path previous_path,
                             double desired_lane, double desired_speed, Map map) {
 
     Path result_path;
 
-    int prev_path_size = previous_path.size();
-
     // add all unconsumed former points to the path
-    for(int i = 0; i < prev_path_size; ++i) {
-        result_path.push_back(previous_path[i]);
+    for(int i = 0; i < previous_path.size(); ++i) {
+        result_path.push_back(previous_path.get(i));
+        //std::cout << "resusing point (" << previous_path.get(i).x << ", " << previous_path.get(i).y << ")" << std::endl;
     }
+    int prev_path_size = result_path.size();
+    //std::cout << "resuding " << prev_path_size << " previous waypoints" << std::endl;
 
     ///////////////////////////////
     ///// generate a spline
@@ -84,11 +100,15 @@ Path GeneratePath(CarState car, vector<Point> previous_path,
     // convert anchor points to car-based reference system
     Path anchor_pts;
 
+    double v_spline = 0.0;
+
     // The spline should be tangent to the last part of the path. Generate 2 points!
     if(prev_path_size > 1) {
         // Use the last two points
-        anchor_pts.push_back(previous_path[prev_path_size-2]);
-        anchor_pts.push_back(previous_path[prev_path_size-1]);
+        anchor_pts.push_back(previous_path.get(prev_path_size-2));
+        anchor_pts.push_back(previous_path.get(prev_path_size-1));
+
+        v_spline = previous_path.get(prev_path_size-2).distance(previous_path.get(prev_path_size-1))/0.02;
     } else {
         // We need to make one point up in the past to get a yaw angle    
 
@@ -98,10 +118,13 @@ Path GeneratePath(CarState car, vector<Point> previous_path,
 
         anchor_pts.push_back(prev);
         anchor_pts.push_back(cur);
+
+        v_spline = car.speed;
     }
     
     // Additionally create 3 new anchor points further ahead of the car
     double new_d = desired_lane * 4. + 2.;
+
     vector<double> wp1 = map.getXY(car.s + 30, new_d);
     vector<double> wp2 = map.getXY(car.s + 60, new_d);
     vector<double> wp3 = map.getXY(car.s + 90, new_d);
@@ -112,37 +135,43 @@ Path GeneratePath(CarState car, vector<Point> previous_path,
     // Reference for spline generation is the first of the anchor points
     Point ref = anchor_pts.get(1);
     double ref_yaw = atan2(anchor_pts.get(1).y - anchor_pts.get(0).y, anchor_pts.get(1).x - anchor_pts.get(0).x);
-
+    //std::cout << "ref_yaw " << ref_yaw << std::endl;
     // Anchor points shifted and rotated
     Path transf_anchor_pts;
     for(std::vector<Point>::size_type i = 0; i != anchor_pts.size(); i++){
         // shift points by current x,y vector of the car
         Point result = anchor_pts.get(i).subtract(ref).rotate(0 - ref_yaw);
         transf_anchor_pts.push_back(result);
+
+        //std::cout << "anchor point (" << anchor_pts.get(i).x << ", " << anchor_pts.get(i).y 
+        //            << ") is transformed to (" << transf_anchor_pts.get(i).x << ", " << transf_anchor_pts.get(i).y << ")" << std::endl;
     }
     
     // set spline points
     tk::spline s;
     s.set_points(transf_anchor_pts.getX(), transf_anchor_pts.getY());
 
+    Point target_point = {30.0, s(30.0)};
+    double x_add_on = 0.0;
+
     // Get target waypoint and compute distance
-    double d = transf_anchor_pts.get(1).distance(transf_anchor_pts.get(4));
+    double d = transf_anchor_pts.get(1).distance(target_point);
 
-    int N = 50 - prev_path_size;
+    //int N = 50 - prev_path_size;
     const double CONST_MPH_TO_MPS = 0.44704;
+    //std::cout << "Creating " << N << " new points" << std::endl;
 
-    double ref_vel = car.speed;
+    double delta_t = 0.02;
 
-    for(int i = 0; i < N; ++i) {
+    for(int i = 0; i < 50 - previous_path.size(); ++i) {
 
-        // double x_val = transf_anchor_ptsx[1] + (i+1) * step_size;
-        double x_val = transf_anchor_pts.get(1).x + (i+1) * 0.02 * ref_vel * CONST_MPH_TO_MPS;
+        double N = d/(delta_t * desired_speed * CONST_MPH_TO_MPS);
+
+        //double x_val = transf_anchor_pts.get(1).x + (i+1) *  delta_t * desired_speed * CONST_MPH_TO_MPS;
+        double x_val = x_add_on + target_point.x/N;
         double y_val = s(x_val);
-        
-        // Choose the increment, so that given the number of steps N, the car gets as close as possible to the desired target speed
-        if (ref_vel < 49.5) {
-            ref_vel += 0.12;
-        }
+        x_add_on = x_val;
+        //std::cout << "New point (" << x_val << ", " << y_val << ")" << std::endl;
 
         Point p{x_val, y_val};
         Point result = p.rotate(ref_yaw).add(ref);

@@ -1,0 +1,2 @@
+1. Generate trajectories for all other vehicles detected by the sensor fusion
+2. Generate trajectories for the car with a designed end speed

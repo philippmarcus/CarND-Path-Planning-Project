@@ -53,12 +53,14 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
-  Map m;
+  Map map;
 
-  double ref_vel = 0; // miles per hour
+  double ref_vel = 0.0; // miles per hour
+  int ref_lane = 1;
+
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &ref_vel]
+               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &ref_lane, &map]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -77,141 +79,65 @@ int main() {
           // j[1] is the data JSON object
           
           // Main car's localization Data
-          double car_x = j[1]["x"];
-          double car_y = j[1]["y"];
-          double car_s = j[1]["s"];
-          double car_d = j[1]["d"];
-          double car_yaw = j[1]["yaw"];
-          double car_speed = j[1]["speed"];
+          CarState car = {j[1]["x"],
+                          j[1]["y"],
+                          j[1]["s"],
+                          j[1]["d"],
+                          j[1]["yaw"],
+                          j[1]["speed"]};
 
           // Previous path data given to the Planner
-          auto previous_path_x = j[1]["previous_path_x"];
-          auto previous_path_y = j[1]["previous_path_y"];
+          Path previous_path = {j[1]["previous_path_x"], j[1]["previous_path_y"]};
+
           // Previous path's end s and d values 
-          double end_path_s = j[1]["end_path_s"];
-          double end_path_d = j[1]["end_path_d"];
+          double end_s= j[1]["end_path_s"];
+          double end_d = j[1]["end_path_d"];
 
           // Sensor Fusion Data, a list of all other cars on the same side 
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
+
+          bool road_blocked = false;
+          std::cout << "===" << std::endl;
+          for(int i=0; i < sensor_fusion.size(); ++i) {
+            float vx = sensor_fusion[i][3];
+            float vy = sensor_fusion[i][4];
+            double check_speed = sqrt(vx*vx + vy*vy);
+            double check_car_s = sensor_fusion[i][5];
+            check_car_s += ((double) 0.02 * check_speed * previous_path.size());
+            float d = sensor_fusion[i][6];
+
+            std::cout << "d = " << d << std::endl;
+            // if car is on our lane
+
+            // @TODO should use end_d instead
+            if(((ref_lane*4 + 2) - 2) < d && ((ref_lane*4 + 2) +2) > d) {
+              if ((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) {
+                  road_blocked = true;
+                  //ref_vel = 29.5;
+
+                  std::cout << "found blocking car on lane " << (d/4) << " distance " << check_car_s << std::endl;
+              }
+            }
+          }
+          
+          if (road_blocked) {
+            ref_vel -= 0.244;
+          } else {
+            if(ref_vel < 49.5) {
+              ref_vel += 0.244;
+            }
+          }
 
           json msgJson;
 
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
-          int prev_path_size = previous_path_x.size();
+          Path res_path = GeneratePath(car, previous_path, 1, ref_vel, map);
 
-          // add all unconsumed former points to the path
-          
-          for(int i = 0; i < prev_path_size; ++i) {
-            next_x_vals.push_back(previous_path_x[i]);
-            next_y_vals.push_back(previous_path_y[i]);
-          }
-          
-          ///////////////////////////////
-          ///// generate a spline
-          ///////////////////////////////
-
-          // convert anchor points to car-based reference system
-          vector<double> anchor_ptsx;
-          vector<double> anchor_ptsy;
-
-          // The spline should be tangent to the last part of the path. Generate 2 points!
-          if(prev_path_size > 1) {
-            std::cout << prev_path_size << " previous path points available! Case 1" << std::endl;
-            // Use the last two points
-            anchor_ptsx.push_back(previous_path_x[prev_path_size-2]);
-            anchor_ptsx.push_back(previous_path_x[prev_path_size-1]);
-
-            anchor_ptsy.push_back(previous_path_y[prev_path_size-2]);
-            anchor_ptsy.push_back(previous_path_y[prev_path_size-1]);
-
-          } else {
-            std::cout << prev_path_size << " previous path points available! Case 2" << std::endl;
-            // We need to make one point up in the past to get a yaw angle
-            anchor_ptsx.push_back(car_x - cos(car_yaw));
-            anchor_ptsx.push_back(car_x);
-
-            anchor_ptsy.push_back(car_y - sin(car_yaw));
-            anchor_ptsy.push_back(car_y);
-          }
-
-          // Additionally create 3 new anchor points further ahead of the car
-          double lane = 1.;
-          double new_d = lane * 4. + 2.;
-          vector<double> wp1 = getXY(car_s + 30, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          vector<double> wp2 = getXY(car_s + 60, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          vector<double> wp3 = getXY(car_s + 90, new_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          anchor_ptsx.push_back(wp1[0]);
-          anchor_ptsx.push_back(wp2[0]);
-          anchor_ptsx.push_back(wp3[0]);
-          anchor_ptsy.push_back(wp1[1]);
-          anchor_ptsy.push_back(wp2[1]);
-          anchor_ptsy.push_back(wp3[1]);
-
-          // Reference for spline generation is the first of the anchor points
-          double ref_x = anchor_ptsx[1];
-          double ref_y = anchor_ptsy[1];
-          double ref_yaw = atan2(anchor_ptsy[1] - anchor_ptsy[0], anchor_ptsx[1] - anchor_ptsx[0]);
-
-          vector<double> transf_anchor_ptsx;
-          vector<double> transf_anchor_ptsy;
-
-          for(std::vector<vector<double>>::size_type i = 0; i != anchor_ptsx.size(); i++){
-            // shift points by current x,y vector of the car
-            double shift_x = anchor_ptsx[i] - ref_x;
-            double shift_y = anchor_ptsy[i] - ref_y;
-
-            // rotate points by current angle of the car
-            transf_anchor_ptsx.push_back(shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw));
-            transf_anchor_ptsy.push_back(shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw));
-          }
-          
-          // set spline points
-          tk::spline s;
-
-          s.set_points(transf_anchor_ptsx, transf_anchor_ptsy);
-
-          // Get target waypoint and compute distance
-          double d = distance(transf_anchor_ptsx[1], transf_anchor_ptsy[1], transf_anchor_ptsx[4], transf_anchor_ptsy[4]);
-          int N = 50 - prev_path_size;
-          //double step_size = d/N;
-
-          //double step_size = 0.42;
-          
-
-          const double CONST_MPH_TO_MPS = 0.44704;
-
-          for(int i = 0; i < N; ++i) {
-
-            // double x_val = transf_anchor_ptsx[1] + (i+1) * step_size;
-            double x_val = transf_anchor_ptsx[1] + (i+1) * 0.02 * ref_vel * CONST_MPH_TO_MPS;
-            double y_val = s(x_val);
-            
-            // Choose the increment, so that given the number of steps N, the car gets as close as possible to the desired target speed
-            if (ref_vel < 49.5) {
-              ref_vel += 0.12;
-            }
-
-            // shift points by current x,y vector of the car
-            double rotated_x = x_val * cos(ref_yaw) - y_val * sin(ref_yaw);
-            double rotated_y = x_val * sin(ref_yaw) + y_val * cos(ref_yaw);
-
-            double shift_x = rotated_x + ref_x;
-            double shift_y = rotated_y + ref_y;
-
-            // rotate points by current angle of the car and add to result
-            next_x_vals.push_back(shift_x);
-            next_y_vals.push_back(shift_y);
-          }
-
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
+          msgJson["next_x"] = res_path.getX();
+          msgJson["next_y"] = res_path.getY();
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
