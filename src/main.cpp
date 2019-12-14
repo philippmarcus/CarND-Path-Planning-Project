@@ -116,20 +116,27 @@ int main() {
 
             // @TODO should use end_d instead
             
-            if ((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) {
-                  
+            if ((check_car_s > end_s) && (abs(check_car_s - end_s) < car.speed/2.)) {   
                   std::cout << "found blocking car on lane " << lane  << " distance " << check_car_s << std::endl;
                   road_blocked_ahead[lane] = true;
+              }
 
+            if ((check_car_s > end_s) && (abs(check_car_s - end_s) < car.speed/2.0)) {
                   // smallest speed ahead will be the reference speed
                   if(check_speed < speed_limits[lane]) {
                     // Smoothly adapt the speed limit when approaching cars
                     speed_limits[lane] = fmin(check_speed * (abs(check_car_s - end_s)/30.), 49.5);
-                  }         
-              }
+                  }
+            }
 
-            if (((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) ||
-                  ((check_car_s < end_s) && (abs(check_car_s - end_s) < 5))) {
+            // more safety distance when we drive faster than 30 or 10 and
+            // less distance otherwise.
+            //double min_front_safety_distance = 8;
+            //double min_rear_safety_distance = 8;
+            //double front_safety_distance = fmax(30 * (car.speed/49.5), min_front_safety_distance);
+            //double rear_safety_distance = fmax(10 * (car.speed/49.5), min_rear_safety_distance);
+            if (((check_car_s > end_s) && (abs(check_car_s - end_s) < car.speed/2.0)) ||
+                  ((check_car_s < end_s) && (abs(check_car_s - end_s) < check_speed/2.0))) {
                   safe_for_lane_change[lane] = false;
               }
           }
@@ -138,16 +145,15 @@ int main() {
            * Goal is to move to that non-blocked lane that
            * has the highest speed_limit
            */
-          int best_lane = ref_lane;
-          double highest_speed_limit = speed_limits[ref_lane];
-          for (int i = 0; i < 3; ++i) {
+          int fastest_lane = 2;
+          double highest_speed_limit = speed_limits[fastest_lane];
+          for (int i = 2; i >= 0; --i) {
             if(speed_limits[i] > highest_speed_limit) {
               highest_speed_limit = speed_limits[i];
-              best_lane = i;
+              fastest_lane = i;
             }
           }
-
-          std::cout << "Currently best lane is: " << best_lane << std::endl;
+          std::cout << "Currently fastest lane is: " << fastest_lane << std::endl;
           
 
           /*
@@ -155,16 +161,33 @@ int main() {
            * - if road is blocked and left is free: turn left
            * - if road is blocked and right is free: turn right
            * - if road is blocked and nothing is free: reduce speed
+           * 
+           * - if the lane change brings me closer to the best lane - do it
+           * - find that lane that is safe to change to and closest to the best lane
+           * - if right change is safe and reduces the distance to best lane: change right
+           * - if left change is safe and reduces the distance to best lane: change left
            */
-          if (road_blocked_ahead[ref_lane]) {
-            if(ref_lane > 0 && safe_for_lane_change[ref_lane-1]){
+
+            // check if car arrived in the center of its target lane - only then look for new lines.
+            if((car.d < ref_lane*4 + 3.5) && (car.d > ref_lane*4 + 1.5)) {
+              std::cout << "car reached middle" << std::endl;
+              // change towards the best lane - standard is lane 
+              if(safe_for_lane_change[ref_lane-1] && fastest_lane < ref_lane) {
+                ref_lane -=1;
+              } else if(safe_for_lane_change[ref_lane+1] && fastest_lane > ref_lane){
+                ref_lane +=1;
+              }
+            }
+
+            /*if(ref_lane > 0 && safe_for_lane_change[ref_lane-1]){
               ref_lane -=1;
             } else if(ref_lane < 2 && safe_for_lane_change[ref_lane+1]){
               ref_lane +=1;
-            } else {
+            }*/ 
+            // adjust the speed limit according to the new lane
+            if (road_blocked_ahead[ref_lane] && ref_vel > 0.244) {
               ref_vel -= 0.244;
-            }
-          } else if(ref_vel < speed_limits[ref_lane]) {
+            } else if(ref_vel < speed_limits[ref_lane]) {
             ref_vel += 0.244;
           }
 
