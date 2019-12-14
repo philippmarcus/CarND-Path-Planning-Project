@@ -58,6 +58,8 @@ int main() {
   double ref_vel = 0.0; // miles per hour
   int ref_lane = 1;
 
+  double speed_limit = 49.5;
+
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &ref_lane, &map]
@@ -100,6 +102,7 @@ int main() {
           // Blocking information for lane 0, 1, 2
           bool road_blocked_ahead[] = {false, false, false};
           bool safe_for_lane_change[] = {true, true, true};
+          double speed_limits[] = {49.5, 49.5, 49.5};
           std::cout << "===" << std::endl;
           for(int i=0; i < sensor_fusion.size(); ++i) {
             float vx = sensor_fusion[i][3];
@@ -108,30 +111,50 @@ int main() {
             double check_car_s = sensor_fusion[i][5];
             check_car_s += ((double) 0.02 * check_speed * previous_path.size());
             float d = sensor_fusion[i][6];
+            int lane = (int) floor(d/4);
             // if car is on our lane
 
             // @TODO should use end_d instead
             
             if ((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) {
-                  std::cout << "found blocking car on lane " << (int) floor(d/4)  << " distance " << check_car_s << std::endl;
-                  road_blocked_ahead[(int) floor(d/4)] = true;
+                  
+                  std::cout << "found blocking car on lane " << lane  << " distance " << check_car_s << std::endl;
+                  road_blocked_ahead[lane] = true;
+
+                  // smallest speed ahead will be the reference speed
+                  if(check_speed < speed_limits[lane]) {
+                    speed_limits[lane] = check_speed;
+                  }         
               }
 
             if (((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) ||
                   ((check_car_s < end_s) && (abs(check_car_s - end_s) < 5))) {
-                  std::cout << "found blocking car on lane " << (int) floor(d/4)  << " distance " << check_car_s << std::endl;
-                  safe_for_lane_change[(int) floor(d/4)] = false;
+                  safe_for_lane_change[lane] = false;
               }
-
-
           }
 
-          /**
+          /*
+           * Goal is to move to that non-blocked lane that
+           * has the highest speed_limit
+           */
+          int best_lane = ref_lane;
+          double highest_speed_limit = speed_limits[ref_lane];
+          for (int i = 0; i < 3; ++i) {
+            if(speed_limits[i] > highest_speed_limit) {
+              highest_speed_limit = speed_limits[i];
+              best_lane = i;
+            }
+          }
+
+          std::cout << "Currently best lane is: " << best_lane << std::endl;
+          
+
+          /*
            * Logic:
            * - if road is blocked and left is free: turn left
            * - if road is blocked and right is free: turn right
            * - if road is blocked and nothing is free: reduce speed
-           **/
+           */
           if (road_blocked_ahead[ref_lane]) {
             if(ref_lane > 0 && safe_for_lane_change[ref_lane-1]){
               ref_lane -=1;
@@ -140,7 +163,7 @@ int main() {
             } else {
               ref_vel -= 0.244;
             }
-          } else if(ref_vel < 49.5) {
+          } else if(ref_vel < speed_limits[ref_lane]) {
             ref_vel += 0.244;
           }
 
@@ -159,7 +182,7 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          Path res_path = GeneratePath(car, previous_path, ref_lane, ref_vel, map);
+          Path res_path = GeneratePath(car, previous_path, end_s, ref_lane, ref_vel, map);
 
           msgJson["next_x"] = res_path.getX();
           msgJson["next_y"] = res_path.getY();

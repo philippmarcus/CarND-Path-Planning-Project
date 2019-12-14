@@ -80,7 +80,7 @@ Path::Path(vector<double> ptsx, vector<double> ptsy) {
 
 Path::Path() {}
 
-Path GeneratePath(CarState car, Path previous_path,
+Path GeneratePath(CarState car, Path previous_path, double end_s,
                             double desired_lane, double desired_speed, Map map) {
 
     Path result_path;
@@ -101,6 +101,7 @@ Path GeneratePath(CarState car, Path previous_path,
     Path anchor_pts;
 
     double v_spline = 0.0;
+    double s_spline = 0.0;
 
     // The spline should be tangent to the last part of the path. Generate 2 points!
     if(prev_path_size > 1) {
@@ -109,6 +110,7 @@ Path GeneratePath(CarState car, Path previous_path,
         anchor_pts.push_back(previous_path.get(prev_path_size-1));
 
         v_spline = previous_path.get(prev_path_size-2).distance(previous_path.get(prev_path_size-1))/0.02;
+        s_spline = end_s;
     } else {
         // We need to make one point up in the past to get a yaw angle    
 
@@ -120,14 +122,17 @@ Path GeneratePath(CarState car, Path previous_path,
         anchor_pts.push_back(cur);
 
         v_spline = car.speed;
+        s_spline = car.s;
     }
     
     // Additionally create 3 new anchor points further ahead of the car
     double new_d = desired_lane * 4. + 2.;
 
-    vector<double> wp1 = map.getXY(car.s + 40, new_d);
-    vector<double> wp2 = map.getXY(car.s + 80, new_d);
-    vector<double> wp3 = map.getXY(car.s + 120, new_d);
+    //double spline_start = car.s;//end_s ? prev_path_size > 1 : car.s;
+
+    vector<double> wp1 = map.getXY(s_spline + 30, new_d);
+    vector<double> wp2 = map.getXY(s_spline + 60, new_d);
+    vector<double> wp3 = map.getXY(s_spline + 90, new_d);
     anchor_pts.push_back({wp1[0], wp1[1]});
     anchor_pts.push_back({wp2[0], wp2[1]});
     anchor_pts.push_back({wp3[0], wp3[1]});

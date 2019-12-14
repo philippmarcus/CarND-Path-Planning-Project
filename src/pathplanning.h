@@ -55,7 +55,7 @@ class CarState {
     private:
 };
 
-Path GeneratePath(CarState car, Path previous_path,
+Path GeneratePath(CarState car, Path previous_path, double end_s,
                             double desired_lane, double desired_speed, Map map);
 
 #endif  // PATHPLANNING_H
