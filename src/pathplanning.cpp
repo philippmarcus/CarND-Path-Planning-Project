@@ -125,9 +125,9 @@ Path GeneratePath(CarState car, Path previous_path,
     // Additionally create 3 new anchor points further ahead of the car
     double new_d = desired_lane * 4. + 2.;
 
-    vector<double> wp1 = map.getXY(car.s + 30, new_d);
-    vector<double> wp2 = map.getXY(car.s + 60, new_d);
-    vector<double> wp3 = map.getXY(car.s + 90, new_d);
+    vector<double> wp1 = map.getXY(car.s + 40, new_d);
+    vector<double> wp2 = map.getXY(car.s + 80, new_d);
+    vector<double> wp3 = map.getXY(car.s + 120, new_d);
     anchor_pts.push_back({wp1[0], wp1[1]});
     anchor_pts.push_back({wp2[0], wp2[1]});
     anchor_pts.push_back({wp3[0], wp3[1]});

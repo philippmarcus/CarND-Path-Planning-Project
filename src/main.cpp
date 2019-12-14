@@ -97,7 +97,9 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          bool road_blocked = false;
+          // Blocking information for lane 0, 1, 2
+          bool road_blocked_ahead[] = {false, false, false};
+          bool safe_for_lane_change[] = {true, true, true};
           std::cout << "===" << std::endl;
           for(int i=0; i < sensor_fusion.size(); ++i) {
             float vx = sensor_fusion[i][3];
@@ -106,35 +108,58 @@ int main() {
             double check_car_s = sensor_fusion[i][5];
             check_car_s += ((double) 0.02 * check_speed * previous_path.size());
             float d = sensor_fusion[i][6];
-
-            std::cout << "d = " << d << std::endl;
             // if car is on our lane
 
             // @TODO should use end_d instead
-            if(((ref_lane*4 + 2) - 2) < d && ((ref_lane*4 + 2) +2) > d) {
-              if ((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) {
-                  road_blocked = true;
-                  //ref_vel = 29.5;
-
-                  std::cout << "found blocking car on lane " << (d/4) << " distance " << check_car_s << std::endl;
+            
+            if ((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) {
+                  std::cout << "found blocking car on lane " << (int) floor(d/4)  << " distance " << check_car_s << std::endl;
+                  road_blocked_ahead[(int) floor(d/4)] = true;
               }
-            }
+
+            if (((check_car_s > end_s) && (abs(check_car_s - end_s) < 30)) ||
+                  ((check_car_s < end_s) && (abs(check_car_s - end_s) < 5))) {
+                  std::cout << "found blocking car on lane " << (int) floor(d/4)  << " distance " << check_car_s << std::endl;
+                  safe_for_lane_change[(int) floor(d/4)] = false;
+              }
+
+
           }
+
+          /**
+           * Logic:
+           * - if road is blocked and left is free: turn left
+           * - if road is blocked and right is free: turn right
+           * - if road is blocked and nothing is free: reduce speed
+           **/
+          if (road_blocked_ahead[ref_lane]) {
+            if(ref_lane > 0 && safe_for_lane_change[ref_lane-1]){
+              ref_lane -=1;
+            } else if(ref_lane < 2 && safe_for_lane_change[ref_lane+1]){
+              ref_lane +=1;
+            } else {
+              ref_vel -= 0.244;
+            }
+          } else if(ref_vel < 49.5) {
+            ref_vel += 0.244;
+          }
+
           
-          if (road_blocked) {
+          /**
+          if (road_blocked[ref_lane]) {
             ref_vel -= 0.244;
           } else {
             if(ref_vel < 49.5) {
               ref_vel += 0.244;
             }
-          }
+          }**/
 
           json msgJson;
 
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          Path res_path = GeneratePath(car, previous_path, 1, ref_vel, map);
+          Path res_path = GeneratePath(car, previous_path, ref_lane, ref_vel, map);
 
           msgJson["next_x"] = res_path.getX();
           msgJson["next_y"] = res_path.getY();
