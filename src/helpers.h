@@ -21,6 +21,10 @@ string hasData(string s);
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; };
+constexpr double CONST_Miles_To_KM = 1.6093;
+constexpr double CONST_MPH_TO_MPS = 0.44704;
+constexpr double safety_dist(double vel) {return CONST_Miles_To_KM*vel/2.0; };
+
 double deg2rad(double x);
 double rad2deg(double x);
 
