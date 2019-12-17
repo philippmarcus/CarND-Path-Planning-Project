@@ -130,7 +130,7 @@ Path GeneratePath(CarState car, Path previous_path, double end_s,
 
     //double spline_start = car.s;//end_s ? prev_path_size > 1 : car.s;
 
-    vector<double> wp1 = map.getXY(s_spline + 30, new_d);
+    vector<double> wp1 = map.getXY(s_spline + 35, new_d);
     vector<double> wp2 = map.getXY(s_spline + 60, new_d);
     vector<double> wp3 = map.getXY(s_spline + 90, new_d);
     anchor_pts.push_back({wp1[0], wp1[1]});

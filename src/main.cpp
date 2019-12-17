@@ -122,7 +122,7 @@ int main() {
               double lane_center = lane * 4 + 2;
 
                 // And check if the other car keeps lateral safety distance to that lane
-                if(abs(lane_center - d) < 2.5) {
+                if(abs(lane_center - d) < 3) {
 
                   // If ego is too close
                   if(ego_violates_safety_dist) {
